@@ -79,7 +79,7 @@ class FluentSupportClient {
   }
 
   async deleteTicket(ticketId: number) {
-    const response = await this.apiClient.delete(`/tickets/${ticketId}`);
+    const response = await this.apiClient.post(`/tickets/${ticketId}/delete`);
     return response.data;
   }
 
@@ -94,9 +94,12 @@ class FluentSupportClient {
   }
 
   async closeTicket(ticketId: number) {
-    const response = await this.apiClient.put(`/tickets/${ticketId}/property`, {
-      status: 'closed',
-    });
+    const response = await this.apiClient.post(`/tickets/${ticketId}/close`);
+    return response.data;
+  }
+
+  async reopenTicket(ticketId: number) {
+    const response = await this.apiClient.post(`/tickets/${ticketId}/re-open`);
     return response.data;
   }
 
@@ -518,8 +521,19 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'fluent_support_create_ticket':
         return { content: [{ type: 'text', text: JSON.stringify(await client.createTicket(args as any), null, 2) }] };
       case 'fluent_support_update_ticket': {
-        const { ticket_id, ...updateData } = args as any;
-        return { content: [{ type: 'text', text: JSON.stringify(await client.updateTicketProperty(ticket_id, updateData), null, 2) }] };
+        const { ticket_id, status, ...propertyData } = args as any;
+        const results: any[] = [];
+        // Status changes require dedicated endpoints
+        if (status === 'closed') {
+          results.push(await client.closeTicket(ticket_id));
+        } else if (status === 'active' || status === 'new') {
+          results.push(await client.reopenTicket(ticket_id));
+        }
+        // Other properties use the property endpoint
+        if (Object.keys(propertyData).length > 0) {
+          results.push(await client.updateTicketProperty(ticket_id, propertyData));
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(results.length === 1 ? results[0] : results, null, 2) }] };
       }
       case 'fluent_support_delete_ticket':
         return { content: [{ type: 'text', text: JSON.stringify(await client.deleteTicket((args as any)?.ticket_id), null, 2) }] };
